@@ -2,8 +2,8 @@
 /**
  * Stripe Invoice Generator for CMC EM Patagonia Orders
  *
- * Pricing is based on TOTAL order volume across all customers.
- * The script calculates the tier first, then applies that pricing to all invoices.
+ * Pricing is based on product+color combination quantities.
+ * Each combo must independently meet tier thresholds (6, 18, 50, 72).
  *
  * Usage:
  *   node invoice.js                         # Fetch from Google Sheet, create drafts
@@ -101,6 +101,27 @@ async function fetchFromSheet() {
   return data.orders;
 }
 
+// Colors that count as "Gray" for pricing purposes
+const GRAY_COLORS = ["Birch White", "Stonewash"];
+
+function normalizeColor(color) {
+  if (GRAY_COLORS.includes(color)) return "Gray";
+  return color;
+}
+
+// Count items by product+color to determine pricing tiers
+function countByProductColor(rows) {
+  const counts = {};
+  for (const row of rows) {
+    const product = row.Product;
+    const color = normalizeColor(row.Color);
+    if (!product) continue;
+    const key = `${product}|${color}`;
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
 // Group orders by email
 function groupByEmail(rows) {
   const grouped = {};
@@ -128,10 +149,10 @@ function groupByEmail(rows) {
   return Object.values(grouped);
 }
 
-// Determine pricing tier based on total quantity
-function getPricingTier(totalItems) {
+// Determine pricing tier based on quantity
+function getPricingTier(qty) {
   for (const tier of pricing.tiers) {
-    if (totalItems >= tier.minQty) {
+    if (qty >= tier.minQty) {
       return tier.minQty.toString();
     }
   }
@@ -144,16 +165,28 @@ function getTierLabel(tierKey) {
   return tier ? tier.label : tierKey;
 }
 
-// Calculate line item price using the determined tier
-function getItemPrice(item, tierKey) {
+// Build a map of product+color -> tier based on quantities
+function buildTierMap(productColorCounts) {
+  const tierMap = {};
+  for (const [key, count] of Object.entries(productColorCounts)) {
+    tierMap[key] = getPricingTier(count);
+  }
+  return tierMap;
+}
+
+// Calculate line item price using the product+color tier
+function getItemPrice(item, tierMap) {
   const productPricing = pricing.products[item.product];
   if (!productPricing) {
     console.warn(`Warning: Unknown product "${item.product}", skipping`);
     return null;
   }
+  const color = normalizeColor(item.color);
+  const key = `${item.product}|${color}`;
+  const tierKey = tierMap[key] || "6";
   const basePrice = productPricing[tierKey];
   const embroideryFee = item.embroideredName ? pricing.embroideryFee : 0;
-  return basePrice + embroideryFee;
+  return { price: basePrice + embroideryFee, tierKey };
 }
 
 // Format item description
@@ -187,14 +220,19 @@ async function main() {
   const customers = groupByEmail(rows);
   console.log(`Found ${customers.length} unique customers`);
 
-  // Count total items to determine pricing tier
-  const totalItems = rows.length;
-  const tierKey = getPricingTier(totalItems);
+  // Count items by product+color to determine pricing tiers
+  const productColorCounts = countByProductColor(rows);
+  const tierMap = buildTierMap(productColorCounts);
+
   console.log("");
-  console.log(`=== PRICING TIER: ${getTierLabel(tierKey)} (${totalItems} total items) ===`);
-  console.log("Per-item pricing at this tier:");
-  for (const [product, tiers] of Object.entries(pricing.products)) {
-    console.log(`  ${product}: $${tiers[tierKey].toFixed(2)}`);
+  console.log("=== PRICING BY PRODUCT + COLOR ===");
+  const sortedKeys = Object.keys(productColorCounts).sort();
+  for (const key of sortedKeys) {
+    const [product, color] = key.split("|");
+    const count = productColorCounts[key];
+    const tier = tierMap[key];
+    const unitPrice = pricing.products[product]?.[tier] || 0;
+    console.log(`  ${product} (${color}): ${count} pcs @ $${unitPrice.toFixed(2)} [${getTierLabel(tier)}]`);
   }
   console.log(`  Embroidery fee: $${pricing.embroideryFee.toFixed(2)} per item`);
   console.log("");
@@ -211,9 +249,10 @@ async function main() {
     let customerTotal = 0;
 
     for (const item of customer.items) {
-      const price = getItemPrice(item, tierKey);
-      if (price === null) continue;
+      const result = getItemPrice(item, tierMap);
+      if (result === null) continue;
 
+      const { price, tierKey } = result;
       customerTotal += price;
       lineItems.push({
         description: getItemDescription(item),
@@ -223,7 +262,7 @@ async function main() {
       });
 
       const embNote = item.embroideredName ? ` + $${pricing.embroideryFee} embroidery` : "";
-      console.log(`  ${item.product} (${item.size}): $${price.toFixed(2)}${embNote}`);
+      console.log(`  ${item.product} ${item.color} (${item.size}): $${price.toFixed(2)}${embNote}`);
     }
 
     // Add Stripe processing fee (2.9% + $0.30)
@@ -305,8 +344,8 @@ async function main() {
 
   // Summary
   console.log("=== SUMMARY ===");
-  console.log(`Pricing tier: ${getTierLabel(tierKey)}`);
-  console.log(`Total items: ${totalItems}`);
+  console.log(`Product+color combos: ${Object.keys(productColorCounts).length}`);
+  console.log(`Total items: ${rows.length}`);
   console.log(`Invoices ${dryRun ? "to create" : "created"}: ${invoiceCount}`);
   console.log(`Total revenue: $${totalRevenue.toFixed(2)}`);
 
