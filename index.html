@@ -139,6 +139,12 @@
   }
 
   /* ── Item cards ── */
+  #itemsContainer {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+
   .item-card {
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -947,13 +953,14 @@ function createItemCard() {
     </div>
     <div class="row-2">
       <div class="field">
-        <label>Embroidered Name &amp; Title <span class="req">*</span></label>
-        <div class="field-hint">Max 20 characters</div>
-        <input type="text" data-field="embroideredName" maxlength="20" required onchange="updateCardDisplay(this)">
+        <label>Embroidered Name &amp; Title</label>
+        <div class="field-hint">Optional — max 20 characters</div>
+        <input type="text" data-field="embroideredName" maxlength="20" onchange="updateCardDisplay(this); updateThreadRequired(this);">
       </div>
       <div class="field">
-        <label>Name Thread Color <span class="req">*</span></label>
-        <select data-field="threadColor" required>
+        <label>Name Thread Color <span class="req thread-req" style="display:none;">*</span></label>
+        <div class="field-hint">Required if name entered</div>
+        <select data-field="threadColor">
           <option value="">Select…</option>
           ${THREAD_COLORS.map((t) => `<option value="${t.value}">${t.label}</option>`).join("")}
         </select>
@@ -1002,6 +1009,16 @@ function updateColorSwatch(colorSelect) {
   }
 }
 
+function updateThreadRequired(nameInput) {
+  const card = nameInput.closest(".item-card");
+  const reqSpan = card.querySelector(".thread-req");
+  if (nameInput.value.trim()) {
+    reqSpan.style.display = "inline";
+  } else {
+    reqSpan.style.display = "none";
+  }
+}
+
 function updateCardDisplay(el) {
   const card = el.closest(".item-card");
   const product = card.querySelector('[data-field="product"]').value;
@@ -1029,11 +1046,12 @@ function updateCardDisplay(el) {
       subtitleEl.textContent = style ? `${style === "Mens" ? "Men's" : "Women's"}` : "";
     }
 
-    // Show price estimate (base + embroidery + folding, before Stripe fee)
+    // Show price estimate (base + folding + embroidery if name entered, before Stripe fee)
     const pricing = PRICING[product];
     if (pricing) {
-      const itemMin = pricing.min + EMBROIDERY_FEE + FOLDING_FEE;
-      const itemMax = pricing.max + EMBROIDERY_FEE + FOLDING_FEE;
+      const embFee = name ? EMBROIDERY_FEE : 0;
+      const itemMin = pricing.min + embFee + FOLDING_FEE;
+      const itemMax = pricing.max + embFee + FOLDING_FEE;
       priceEl.textContent = `$${itemMin.toFixed(0)}–$${itemMax.toFixed(0)}`;
       priceEl.style.display = "inline-block";
     }
@@ -1074,13 +1092,22 @@ function validate() {
   }
 
   cards.forEach((card) => {
-    ["product", "style", "size", "color", "logo", "embroideredName", "threadColor"].forEach((f) => {
+    // Required fields
+    ["product", "style", "size", "color", "logo"].forEach((f) => {
       const el = card.querySelector(`[data-field="${f}"]`);
       if (!el.value || !el.value.trim()) {
         el.closest(".field").classList.add("invalid");
         valid = false;
       }
     });
+
+    // Thread color is required only if embroidered name is entered
+    const embName = card.querySelector('[data-field="embroideredName"]').value.trim();
+    const threadColor = card.querySelector('[data-field="threadColor"]');
+    if (embName && !threadColor.value) {
+      threadColor.closest(".field").classList.add("invalid");
+      valid = false;
+    }
   });
 
   if (!valid) showToast("Please fill in all required fields.", true);
@@ -1105,6 +1132,7 @@ function buildOrderSummary() {
   let baseMin = 0;
   let baseMax = 0;
   let itemCount = 0;
+  let embroideredCount = 0;
 
   document.querySelectorAll(".item-card").forEach((card) => {
     const product = card.querySelector('[data-field="product"]').value;
@@ -1122,8 +1150,12 @@ function buildOrderSummary() {
     baseMin += pricing?.min || 0;
     baseMax += pricing?.max || 0;
     itemCount++;
+    if (embName) embroideredCount++;
 
     const logoLabel = LOGOS.find(l => l.value === logo)?.label || logo;
+    const embroideryLine = embName
+      ? `Embroidery: "${embName}" (${thread} thread)<br>`
+      : '';
 
     html += `
       <div class="summary-item">
@@ -1134,15 +1166,14 @@ function buildOrderSummary() {
         <div class="summary-item-details">
           <span><span class="mini-swatch" style="background: ${swatchColor};"></span>${color}</span> ·
           ${style === "Mens" ? "Men's" : "Women's"}<br>
-          Embroidery: "${embName}" (${thread} thread)<br>
-          Logo: ${logoLabel}
+          ${embroideryLine}Logo: ${logoLabel}
         </div>
       </div>
     `;
   });
 
   // Calculate fees
-  const embroideryTotal = EMBROIDERY_FEE * itemCount;
+  const embroideryTotal = EMBROIDERY_FEE * embroideredCount;
   const foldingTotal = FOLDING_FEE * itemCount;
   const subtotalMin = baseMin + embroideryTotal + foldingTotal;
   const subtotalMax = baseMax + embroideryTotal + foldingTotal;
@@ -1151,16 +1182,21 @@ function buildOrderSummary() {
   const totalMin = subtotalMin + stripeFeeMin;
   const totalMax = subtotalMax + stripeFeeMax;
 
+  // Build fee breakdown
+  const embroideryRow = embroideredCount > 0
+    ? `<div class="summary-fee-row">
+        <span>Embroidery ($${EMBROIDERY_FEE.toFixed(2)}/item × ${embroideredCount})</span>
+        <span>$${embroideryTotal.toFixed(2)}</span>
+      </div>`
+    : '';
+
   html += `
     <div class="summary-fees">
       <div class="summary-fee-row">
         <span>Items subtotal</span>
         <span>$${baseMin.toFixed(2)}–$${baseMax.toFixed(2)}</span>
       </div>
-      <div class="summary-fee-row">
-        <span>Embroidery ($${EMBROIDERY_FEE.toFixed(2)}/item × ${itemCount})</span>
-        <span>$${embroideryTotal.toFixed(2)}</span>
-      </div>
+      ${embroideryRow}
       <div class="summary-fee-row">
         <span>Folding fee ($${FOLDING_FEE.toFixed(2)}/item × ${itemCount})</span>
         <span>$${foldingTotal.toFixed(2)}</span>
