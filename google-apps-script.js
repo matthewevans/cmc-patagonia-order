@@ -11,6 +11,40 @@
  * 7. Copy the deployment URL and paste it into index.html (APPS_SCRIPT_URL)
  */
 
+/**
+ * GET endpoint — returns all orders as JSON for the invoice script.
+ * Usage: fetch(APPS_SCRIPT_URL) returns { orders: [...] }
+ */
+function doGet(e) {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const data = sheet.getDataRange().getValues();
+
+    if (data.length <= 1) {
+      return ContentService.createTextOutput(
+        JSON.stringify({ orders: [] })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const headers = data[0];
+    const orders = data.slice(1).map(function(row) {
+      const order = {};
+      headers.forEach(function(header, i) {
+        order[header] = row[i];
+      });
+      return order;
+    });
+
+    return ContentService.createTextOutput(
+      JSON.stringify({ orders: orders })
+    ).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(
+      JSON.stringify({ status: "error", message: err.toString() })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);

@@ -38,26 +38,25 @@ Once orders are collected, generate invoices using the included script:
 ```bash
 npm install
 cp .env.example .env
-# Edit .env and add your Stripe secret key
+# Edit .env and add your Stripe secret key + Apps Script URL
 ```
-
-#### Export orders
-
-1. Open the Google Sheet
-2. File → Download → Comma-separated values (.csv)
-3. Save as `orders.csv` in this directory
 
 #### Generate invoices
 
 ```bash
-# Preview what will be invoiced (no Stripe calls)
-node invoice.js orders.csv --dry-run
+# Preview what will be invoiced (fetches directly from Google Sheet)
+node invoice.js --dry-run
 
 # Create draft invoices (review in Stripe dashboard before sending)
-node invoice.js orders.csv
+node invoice.js
 
 # Create and send invoices immediately
-node invoice.js orders.csv --send
+node invoice.js --send
+```
+
+You can also use a local CSV export if preferred:
+```bash
+node invoice.js orders.csv --dry-run
 ```
 
 Pricing is automatically determined by total order volume:
