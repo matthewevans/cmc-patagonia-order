@@ -13,6 +13,7 @@ const {
   getItemPrice,
   groupByEmail,
   filterByMinimum,
+  calculateTax,
   calculateStripeFee,
   formatItemDescription,
 } = require("./lib/pricing");
@@ -256,6 +257,14 @@ describe("getItemPrice", () => {
 
     expect(result.price).toBe(132.88 + 0.75);
     expect(result.tierKey).toBe("6");
+  });
+});
+
+describe("calculateTax", () => {
+  it("calculates tax at given rate", () => {
+    expect(calculateTax(100, 0.0725)).toBeCloseTo(7.25, 2);
+    expect(calculateTax(200, 0.0725)).toBeCloseTo(14.50, 2);
+    expect(calculateTax(0, 0.0725)).toBeCloseTo(0, 2);
   });
 });
 

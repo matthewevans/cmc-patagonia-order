@@ -33,6 +33,7 @@ const {
   getItemPrice,
   groupByEmail,
   filterByMinimum,
+  calculateTax,
   calculateStripeFee,
   formatItemDescription,
 } = require("./lib/pricing");
@@ -130,9 +131,35 @@ async function loadOrders() {
   }
 }
 
+// ─── Tax Rate ────────────────────────────────────────────────────────────────
+
+async function getOrCreateTaxRate(taxRate) {
+  // Look for an existing active tax rate we created
+  const existing = await stripe.taxRates.list({ active: true, limit: 100 });
+  const match = existing.data.find(
+    (tr) => tr.metadata?.source === "cmc-patagonia-order" && tr.percentage === taxRate * 100
+  );
+
+  if (match) {
+    console.log(`Using existing Stripe tax rate: ${match.id} (${match.percentage}%)`);
+    return match.id;
+  }
+
+  const created = await stripe.taxRates.create({
+    display_name: "NC Sales Tax",
+    percentage: taxRate * 100,
+    inclusive: false,
+    jurisdiction: "NC",
+    metadata: { source: "cmc-patagonia-order" },
+  });
+
+  console.log(`Created Stripe tax rate: ${created.id} (${created.percentage}%)`);
+  return created.id;
+}
+
 // ─── Invoice Creation ────────────────────────────────────────────────────────
 
-async function createInvoice(customer, lineItems, orderTotal) {
+async function createInvoice(customer, lineItems, taxRateId) {
   // Find or create Stripe customer
   const existingCustomers = await stripe.customers.list({ email: customer.email, limit: 1 });
   let stripeCustomer;
@@ -160,13 +187,17 @@ async function createInvoice(customer, lineItems, orderTotal) {
 
   // Add line items
   for (const item of lineItems) {
-    await stripe.invoiceItems.create({
+    const params = {
       customer: stripeCustomer.id,
       invoice: invoice.id,
       description: item.description,
       amount: item.amount,
       currency: item.currency,
-    });
+    };
+    if (item.taxable) {
+      params.tax_rates = [taxRateId];
+    }
+    await stripe.invoiceItems.create(params);
   }
 
   // Finalize invoice
@@ -237,7 +268,15 @@ async function main() {
   }
   console.log(`  Embroidery fee: $${pricing.embroideryFee.toFixed(2)} per item`);
   console.log(`  Folding fee: $${pricing.foldingFee.toFixed(2)} per item`);
+  console.log(`  Sales tax: ${(pricing.taxRate * 100).toFixed(2)}%`);
   console.log("");
+
+  // Get or create Stripe tax rate
+  let taxRateId = null;
+  if (!dryRun) {
+    taxRateId = await getOrCreateTaxRate(pricing.taxRate);
+    console.log("");
+  }
 
   // Process each customer
   let totalRevenue = 0;
@@ -268,7 +307,7 @@ async function main() {
         description: formatItemDescription(item),
         amount: Math.round(price * 100),
         currency: pricing.currency,
-        quantity: 1,
+        taxable: true,
       });
 
       const embNote = item.embroideredName ? ` + $${pricing.embroideryFee} embroidery` : "";
@@ -286,15 +325,19 @@ async function main() {
       continue;
     }
 
-    // Add Stripe processing fee
-    const stripeFee = calculateStripeFee(customerTotal);
-    const orderTotal = customerTotal + stripeFee;
+    // Tax is handled by Stripe via tax_rates on line items
+    const tax = calculateTax(customerTotal, pricing.taxRate);
+    console.log(`  Sales tax (${(pricing.taxRate * 100).toFixed(2)}%): $${tax.toFixed(2)} (applied by Stripe)`);
+
+    // Add Stripe processing fee (on subtotal + tax)
+    const stripeFee = calculateStripeFee(customerTotal + tax);
+    const orderTotal = customerTotal + tax + stripeFee;
 
     lineItems.push({
       description: "Payment processing fee (2.9% + $0.30)",
       amount: Math.round(stripeFee * 100),
       currency: pricing.currency,
-      quantity: 1,
+      taxable: false,
     });
 
     console.log(`  Processing fee (2.9% + $0.30): $${stripeFee.toFixed(2)}`);
@@ -309,7 +352,7 @@ async function main() {
     }
 
     try {
-      const invoice = await createInvoice(customer, lineItems, orderTotal);
+      const invoice = await createInvoice(customer, lineItems, taxRateId);
       invoiceCount++;
 
       // Save invoice ID back to the Google Sheet

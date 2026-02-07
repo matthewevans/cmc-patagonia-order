@@ -19,6 +19,7 @@ const PRICING = {
   "Better Sweater Quarter Zip": { 6: 155.00, 18: 152.00, 50: 142.68, 72: 139.58 },
 };
 const EMBROIDERY_FEE = 8.00;
+const TAX_RATE = 0.0725;
 
 // Colors that count as "Gray" for grouping purposes
 const GRAY_COLORS = ["Birch White", "Stonewash"];
@@ -181,9 +182,13 @@ function updateSummary() {
   output.push(["TOTALS (fulfilled items only)", "", "", "", "", "", ""]);
   rowTracker.totalsTitle = output.length;
 
+  var subtotal = grandTotalCost + grandTotalEmbroidery;
+  var taxAmount = subtotal * TAX_RATE;
+
   output.push(["Total Items:", String(grandTotalItems), "", "Product Cost:", "$" + grandTotalCost.toFixed(2), "", ""]);
   output.push(["", "", "", "Embroidery:", "$" + grandTotalEmbroidery.toFixed(2), "", ""]);
-  output.push(["", "", "", "GRAND TOTAL:", "$" + (grandTotalCost + grandTotalEmbroidery).toFixed(2), "", ""]);
+  output.push(["", "", "", "Sales Tax (" + (TAX_RATE * 100).toFixed(2) + "%):", "$" + taxAmount.toFixed(2), "", ""]);
+  output.push(["", "", "", "GRAND TOTAL:", "$" + (subtotal + taxAmount).toFixed(2), "", ""]);
   rowTracker.grandTotal = output.length;
 
   // Warning if any unfulfilled

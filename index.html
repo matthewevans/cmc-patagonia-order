@@ -701,7 +701,7 @@
           <tr><td>Quarter Zip</td><td>$155</td><td>$152</td><td>$142.68</td><td>$139.58</td></tr>
           <tr><td>Vest</td><td>$132.88</td><td>$131.28</td><td>$123.58</td><td>$119.88</td></tr>
         </table>
-        A $0.75 folding fee is added per item. Final pricing will be communicated once all orders are in.
+        A $0.75 folding fee and 7.25% NC sales tax are added per item. Final pricing will be communicated once all orders are in.
       </div>
     </details>
 
@@ -715,7 +715,7 @@
     <details>
       <summary>How do I send payment?</summary>
       <div class="faq-answer">
-        Once all orders are received, you will be emailed an invoice with your total and payment instructions. A payment processing fee (2.9% + $0.30) will be included in your invoice total.
+        Once all orders are received, you will be emailed an invoice with your total and payment instructions. NC sales tax (7.25%) and a payment processing fee (2.9% + $0.30) will be included in your invoice total.
       </div>
     </details>
 
@@ -830,6 +830,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvKNB_4bAF4D8l
 // Fees
 const EMBROIDERY_FEE = 8.00;
 const FOLDING_FEE = 0.75;
+const TAX_RATE = 0.0725;
 const STRIPE_PERCENT = 0.029;
 const STRIPE_FIXED = 0.30;
 
@@ -846,7 +847,6 @@ const COLOR_SWATCHES = {
   "New Navy": "#1a2d47",
   "Stonewash": "#8a9a9a",
   "Birch White": "#d4cfc7",
-  "Dark Ruby": "#722f37",
 };
 
 const REF_IMAGES = {
@@ -865,8 +865,12 @@ const COLORS = {
     { value: "Black", label: "Black" },
     { value: "New Navy", label: "New Navy" },
     { value: "Birch White", label: "Birch White (Heather Gray)" },
-    { value: "Dark Ruby", label: "Dark Ruby (Maroon)" },
   ],
+};
+
+const SIZES = {
+  mens: ["XS", "S", "M", "L", "XL", "XXL", "3XL"],
+  womens: ["XXS", "XS", "S", "M", "L", "XL", "XXL"],
 };
 
 const LOGOS = [
@@ -937,7 +941,7 @@ function createItemCard() {
       </div>
       <div class="field">
         <label>Style <span class="req">*</span></label>
-        <select data-field="style" required onchange="updateColors(this); updateCardDisplay(this);">
+        <select data-field="style" required onchange="updateSizes(this); updateColors(this); updateCardDisplay(this);">
           <option value="">Select…</option>
           <option value="Mens">Men's</option>
           <option value="Womens">Women's</option>
@@ -949,8 +953,6 @@ function createItemCard() {
         <label>Size <span class="req">*</span></label>
         <select data-field="size" required onchange="updateCardDisplay(this)">
           <option value="">Select…</option>
-          <option>XXS</option><option>XS</option><option>S</option>
-          <option>M</option><option>L</option><option>XL</option><option>XXL</option>
         </select>
       </div>
       <div class="field">
@@ -1000,6 +1002,23 @@ function updateItemsCount() {
   const count = document.querySelectorAll(".item-card").length;
   const countEl = document.getElementById("itemsCount");
   countEl.textContent = count > 0 ? `(${count})` : "";
+}
+
+function updateSizes(styleSelect) {
+  const card = styleSelect.closest(".item-card");
+  const sizeSelect = card.querySelector('[data-field="size"]');
+  const style = styleSelect.value;
+
+  sizeSelect.innerHTML = '<option value="">Select…</option>';
+
+  if (style && SIZES[style.toLowerCase()]) {
+    SIZES[style.toLowerCase()].forEach((s) => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = s;
+      sizeSelect.appendChild(opt);
+    });
+  }
 }
 
 function updateColors(styleSelect) {
@@ -1073,12 +1092,14 @@ function updateCardDisplay(el) {
       subtitleEl.textContent = style ? `${style === "Mens" ? "Men's" : "Women's"}` : "";
     }
 
-    // Show price estimate (base + folding + embroidery if name entered, before Stripe fee)
+    // Show price estimate (base + folding + embroidery + tax, before Stripe fee)
     const pricing = PRICING[product];
     if (pricing) {
       const embFee = name ? EMBROIDERY_FEE : 0;
-      const itemMin = pricing.min + embFee + FOLDING_FEE;
-      const itemMax = pricing.max + embFee + FOLDING_FEE;
+      const subtotalMin = pricing.min + embFee + FOLDING_FEE;
+      const subtotalMax = pricing.max + embFee + FOLDING_FEE;
+      const itemMin = subtotalMin + (subtotalMin * TAX_RATE);
+      const itemMax = subtotalMax + (subtotalMax * TAX_RATE);
       priceEl.textContent = `$${itemMin.toFixed(0)}–$${itemMax.toFixed(0)}`;
       priceEl.style.display = "inline-block";
     }
@@ -1204,10 +1225,12 @@ function buildOrderSummary() {
   const foldingTotal = FOLDING_FEE * itemCount;
   const subtotalMin = baseMin + embroideryTotal + foldingTotal;
   const subtotalMax = baseMax + embroideryTotal + foldingTotal;
-  const stripeFeeMin = (subtotalMin * STRIPE_PERCENT) + STRIPE_FIXED;
-  const stripeFeeMax = (subtotalMax * STRIPE_PERCENT) + STRIPE_FIXED;
-  const totalMin = subtotalMin + stripeFeeMin;
-  const totalMax = subtotalMax + stripeFeeMax;
+  const taxMin = subtotalMin * TAX_RATE;
+  const taxMax = subtotalMax * TAX_RATE;
+  const stripeFeeMin = ((subtotalMin + taxMin) * STRIPE_PERCENT) + STRIPE_FIXED;
+  const stripeFeeMax = ((subtotalMax + taxMax) * STRIPE_PERCENT) + STRIPE_FIXED;
+  const totalMin = subtotalMin + taxMin + stripeFeeMin;
+  const totalMax = subtotalMax + taxMax + stripeFeeMax;
 
   // Build fee breakdown
   const embroideryRow = embroideredCount > 0
@@ -1227,6 +1250,10 @@ function buildOrderSummary() {
       <div class="summary-fee-row">
         <span>Folding fee ($${FOLDING_FEE.toFixed(2)}/item × ${itemCount})</span>
         <span>$${foldingTotal.toFixed(2)}</span>
+      </div>
+      <div class="summary-fee-row">
+        <span>Sales tax (${(TAX_RATE * 100).toFixed(2)}%)</span>
+        <span>$${taxMin.toFixed(2)}–$${taxMax.toFixed(2)}</span>
       </div>
       <div class="summary-fee-row">
         <span>Payment processing (2.9% + $0.30)</span>
