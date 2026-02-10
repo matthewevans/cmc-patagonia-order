@@ -269,6 +269,7 @@ async function main() {
     console.log(`  ${product} (${color}): ${count} pcs @ $${unitPrice.toFixed(2)} [${getTierLabel(tier, pricing.tiers)}]`);
   }
   console.log(`  Embroidery fee: $${pricing.embroideryFee.toFixed(2)} per item`);
+  console.log(`  Logo embroidery fee: $${pricing.logoFee.toFixed(2)} per item`);
   console.log(`  Folding fee: $${pricing.foldingFee.toFixed(2)} per item`);
   console.log(`  Sales tax: ${(pricing.taxRate * 100).toFixed(2)}%`);
   console.log("");
@@ -312,8 +313,8 @@ async function main() {
         taxable: true,
       });
 
-      const embNote = item.embroideredName ? ` + $${pricing.embroideryFee} embroidery` : "";
-      console.log(`  ${item.product} ${item.color} (${item.size}): $${price.toFixed(2)}${embNote} (incl. $${pricing.foldingFee} folding)`);
+      const embNote = item.embroideredName ? ` + $${pricing.embroideryFee} name embroidery` : "";
+      console.log(`  ${item.product} ${item.color} (${item.size}): $${price.toFixed(2)}${embNote} (incl. $${pricing.logoFee} logo + $${pricing.foldingFee} folding)`);
     }
 
     if (excludedCount > 0) {

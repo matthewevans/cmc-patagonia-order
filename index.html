@@ -701,7 +701,7 @@
           <tr><td>Quarter Zip</td><td>$155</td><td>$152</td><td>$142.68</td><td>$139.58</td></tr>
           <tr><td>Vest</td><td>$132.88</td><td>$131.28</td><td>$123.58</td><td>$119.88</td></tr>
         </table>
-        A $0.75 folding fee and 7.25% NC sales tax are added per item. Final pricing will be communicated once all orders are in.
+        A $10 logo embroidery fee, $0.75 folding fee, and 7.25% NC sales tax are added per item. Final pricing will be communicated once all orders are in.
       </div>
     </details>
 
@@ -829,6 +829,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvKNB_4bAF4D8l
 
 // Fees
 const EMBROIDERY_FEE = 8.00;
+const LOGO_FEE = 10.00;
 const FOLDING_FEE = 0.75;
 const TAX_RATE = 0.0725;
 const STRIPE_PERCENT = 0.029;
@@ -1096,8 +1097,8 @@ function updateCardDisplay(el) {
     const pricing = PRICING[product];
     if (pricing) {
       const embFee = name ? EMBROIDERY_FEE : 0;
-      const subtotalMin = pricing.min + embFee + FOLDING_FEE;
-      const subtotalMax = pricing.max + embFee + FOLDING_FEE;
+      const subtotalMin = pricing.min + embFee + LOGO_FEE + FOLDING_FEE;
+      const subtotalMax = pricing.max + embFee + LOGO_FEE + FOLDING_FEE;
       const itemMin = subtotalMin + (subtotalMin * TAX_RATE);
       const itemMax = subtotalMax + (subtotalMax * TAX_RATE);
       priceEl.textContent = `$${itemMin.toFixed(0)}–$${itemMax.toFixed(0)}`;
@@ -1222,9 +1223,10 @@ function buildOrderSummary() {
 
   // Calculate fees
   const embroideryTotal = EMBROIDERY_FEE * embroideredCount;
+  const logoTotal = LOGO_FEE * itemCount;
   const foldingTotal = FOLDING_FEE * itemCount;
-  const subtotalMin = baseMin + embroideryTotal + foldingTotal;
-  const subtotalMax = baseMax + embroideryTotal + foldingTotal;
+  const subtotalMin = baseMin + embroideryTotal + logoTotal + foldingTotal;
+  const subtotalMax = baseMax + embroideryTotal + logoTotal + foldingTotal;
   const taxMin = subtotalMin * TAX_RATE;
   const taxMax = subtotalMax * TAX_RATE;
   const stripeFeeMin = ((subtotalMin + taxMin) * STRIPE_PERCENT) + STRIPE_FIXED;
@@ -1247,6 +1249,10 @@ function buildOrderSummary() {
         <span>$${baseMin.toFixed(2)}–$${baseMax.toFixed(2)}</span>
       </div>
       ${embroideryRow}
+      <div class="summary-fee-row">
+        <span>Logo embroidery ($${LOGO_FEE.toFixed(2)}/item × ${itemCount})</span>
+        <span>$${logoTotal.toFixed(2)}</span>
+      </div>
       <div class="summary-fee-row">
         <span>Folding fee ($${FOLDING_FEE.toFixed(2)}/item × ${itemCount})</span>
         <span>$${foldingTotal.toFixed(2)}</span>

@@ -26,6 +26,7 @@
     }
   },
   "embroideryFee": 8.00,
+  "logoFee": 10.00,
   "foldingFee": 0.75,
   "taxRate": 0.0725,
   "currency": "usd"
